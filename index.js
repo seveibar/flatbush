@@ -228,13 +228,33 @@ export default class Flatbush {
         const {_boxes: boxes, _levelBounds: levelBounds, _indices: indices, nodeSize} = this;
         const numItems4 = this.numItems * 4;
 
-        /** @type number | undefined */
-        let nodeIndex = boxes.length - 4;
+        const rootIndex = boxes.length - 4;
         let level = levelBounds.length - 1; // start at the root level
+
+        // Check the root before allocating traversal storage. Seed its child directly
+        // so intersecting queries don't check or enqueue the root a second time.
+        const rootEnd = Math.min(rootIndex + nodeSize * 4, levelBounds[level]);
+        const isRootNode = rootIndex >= numItems4;
+        if (!(rootIndex < rootEnd)) return [];
+        const x0 = boxes[rootIndex];
+        if (maxX < x0) return [];
+        const y0 = boxes[rootIndex + 1];
+        if (maxY < y0) return [];
+        const x1 = boxes[rootIndex + 2];
+        if (minX > x1) return [];
+        const y1 = boxes[rootIndex + 3];
+        if (minY > y1) return [];
+        const index = indices[rootIndex >> 2] | 0;
+        if (!isRootNode) {
+            return filterFn === undefined || filterFn(index, x0, y0, x1, y1) ? [index] : [];
+        }
+        const rootChild = index | +(minX <= x0 && minY <= y0 && maxX >= x1 && maxY >= y1);
+        /** @type number | undefined */
+        let nodeIndex = rootChild & ~1;
+        let contained = (rootChild & 1) === 1;
+        level--;
         const q = [];
         const results = [];
-
-        let contained = false; // whether the current node's bbox is fully inside the query
 
         while (nodeIndex !== undefined) {
             // find the end index of the node, capped at the level boundary
